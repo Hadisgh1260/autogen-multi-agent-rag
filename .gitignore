@@ -1,0 +1,19 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# RAG database
+chroma_db/
+
+# Reference data
+data/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
