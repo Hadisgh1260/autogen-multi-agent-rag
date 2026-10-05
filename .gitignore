@@ -11,6 +11,12 @@ chroma_db/
 # Reference data
 data/
 
+# SQLite database
+users.db
+
+# Local password reset script
+resetpass.py
+
 # IDE
 .vscode/
 .idea/

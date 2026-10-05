@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="AutoGen RAG Team - AI software engineering assistant"
+    >
+
+    <title>AutoGen RAG Team</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/style.css"
+    >
+
+</head>
+
+
+<body class="chat-body">
+
+    <div class="app">
+
+        <!-- =====================================================
+             TOP BAR
+             ===================================================== -->
+
+        <header class="topbar">
+
+            <div class="brand">
+
+                <div class="brand-icon">
+                    AI
+                </div>
+
+                <div class="brand-text">
+
+                    <h1>
+                        AutoGen RAG Team
+                    </h1>
+
+                    <span id="usernameLabel">
+                        User
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <button
+                id="logoutButton"
+                class="logout-button"
+                type="button"
+            >
+                Logout
+            </button>
+
+        </header>
+
+
+        <!-- =====================================================
+             CHAT AREA
+             ===================================================== -->
+
+        <main class="chat-container">
+
+            <section
+                id="messages"
+                class="messages"
+                aria-live="polite"
+            >
+
+                <!-- Personalized welcome message is inserted by app.js -->
+
+            </section>
+
+
+            <!-- =================================================
+                 BLOCK SCREEN
+                 ================================================= -->
+
+            <section
+                id="blockBox"
+                class="block-box hidden"
+            >
+
+                <div class="block-icon">
+                    !
+                </div>
+
+                <h2>
+                    Account temporarily blocked
+                </h2>
+
+                <p>
+                    You have reached the maximum number of
+                    unrelated questions for this session.
+                </p>
+
+                <p>
+                    You can use the system again after:
+                </p>
+
+                <div
+                    id="countdown"
+                    class="countdown"
+                >
+                    24:00:00
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 INPUT
+                 ================================================= -->
+
+            <form
+                id="chatForm"
+                class="chat-form"
+            >
+
+                <div class="input-wrapper">
+
+                    <textarea
+                        id="question"
+                        placeholder="Ask a backend, frontend, or software-engineering question..."
+                        rows="2"
+                        maxlength="4000"
+                        required
+                        autocomplete="off"
+                    ></textarea>
+
+                    <button
+                        type="submit"
+                        id="sendButton"
+                        class="send-button"
+                        aria-label="Send message"
+                    >
+                        <span>
+                            Send
+                        </span>
+
+                        <span class="send-arrow">
+                            →
+                        </span>
+
+                    </button>
+
+                </div>
+
+
+                <div class="chat-bottom">
+
+                    <span id="counter">
+                        Unrelated questions: 0 / 3
+                    </span>
+
+                    <span class="input-hint">
+                        Press Enter to send · Shift + Enter for a new line
+                    </span>
+
+                </div>
+
+            </form>
+
+        </main>
+
+    </div>
+
+
+    <script src="/static/app.js"></script>
+
+</body>
+
+</html>
