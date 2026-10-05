@@ -1,80 +1,60 @@
-# AutoGen RAG Team: Backend + Frontend + Manager
+# AutoGen RAG Team
 
-A multi-agent RAG system built with **Microsoft AutoGen AgentChat**, where a Manager agent coordinates two specialized agents: Backend and Frontend.
+A multi-agent RAG web application built with **Microsoft AutoGen AgentChat**, where a Manager agent coordinates specialized Backend and Frontend agents.
 
-Each agent has its own role, tools, and reference collection. The system uses **RAG (Retrieval-Augmented Generation)** to retrieve relevant information from PDFs and web pages before generating answers.
+The project started as a console-based RAG system and evolved into a web application with authentication, session management, contextual follow-ups, and an English chat interface.
 
 ---
 
 ## ✨ Features
 
-* 🤖 Multi-agent system built with **Microsoft AutoGen**
-* 🧠 Manager agent for routing and coordination
-* ⚙️ Specialized Backend agent
-* 🎨 Specialized Frontend agent
-* 📚 Agent-specific RAG knowledge bases
-* 📄 PDF document ingestion
-* 🌐 Web page ingestion
-* 🔎 Semantic search with embeddings
-* 🗄️ ChromaDB vector database
-* 🔄 AutoGen Swarm-based agent handoffs
-* 🛠️ Tool-based retrieval
-* 🔐 Role and reference isolation
-* 🔌 Groq and OpenAI-compatible API support
+### Multi-Agent RAG
+
+- 🤖 Microsoft AutoGen AgentChat
+- 🧠 Manager agent for routing and coordination
+- ⚙️ Specialized Backend agent
+- 🎨 Specialized Frontend agent
+- 📚 Agent-specific RAG knowledge bases
+- 🔎 Semantic search with embeddings
+- 🗄️ ChromaDB vector database
+- 🔄 AutoGen Swarm-based agent handoffs
+- 🛠️ Tool-based retrieval
+- 🔐 Role and reference isolation
+
+### Web Application
+
+- 🌐 FastAPI backend
+- 💬 Browser-based chat interface
+- 🔐 User authentication
+- 🗃️ SQLite user database
+- 🔑 Secure password hashing
+- 👤 User sessions
+- 🧠 Context-aware follow-up questions
+- 🚫 Off-topic question protection
+- ⏱️ Temporary blocking after repeated off-topic questions
+- 📱 Responsive web interface
+- ⌨️ Enter-to-send and Shift+Enter for new lines
+
+### RAG Sources
+
+- 📄 PDF documents
+- 🌐 Web pages
+- 📖 Technical documentation
+- 📚 Agent-specific reference materials
 
 ---
 
-## 🧩 Agents
+## 🏗️ Architecture
 
-The system contains three agents:
+The application contains three AI agents:
 
-| Agent       | Responsibility                         | Knowledge Base   |
-| ----------- | -------------------------------------- | ---------------- |
-| 🧠 Manager  | Understands the question and routes it | `data/manager/`  |
-| ⚙️ Backend  | APIs, databases, servers, architecture | `data/backend/`  |
-| 🎨 Frontend | UI, JavaScript, CSS, browser behavior  | `data/frontend/` |
+| Agent | Responsibility | Knowledge Base |
+|---|---|---|
+| 🧠 Manager | Understands requests, coordinates the team, and routes questions | `data/manager/` |
+| ⚙️ Backend | APIs, databases, servers, authentication, and backend architecture | `data/backend/` |
+| 🎨 Frontend | HTML, CSS, JavaScript, UI, browser behavior, and frontend architecture | `data/frontend/` |
 
-### Manager
-
-The Manager agent receives the user's question first.
-
-It can:
-
-* Answer process or planning questions
-* Decide which specialist is relevant
-* Handoff the task to Backend or Frontend
-* Coordinate the conversation between agents
-
-### Backend
-
-The Backend agent focuses on topics such as:
-
-* REST APIs
-* Databases
-* Authentication
-* Servers
-* Backend architecture
-* Performance
-* Python backend development
-* API design
-
-### Frontend
-
-The Frontend agent focuses on:
-
-* HTML
-* CSS
-* JavaScript
-* UI development
-* Browser behavior
-* Client-side performance
-* Frontend architecture
-
----
-
-## 🧠 RAG Architecture
-
-Each specialist agent has its own reference collection.
+### Agent Flow
 
 ```text
                          User
@@ -98,38 +78,44 @@ Each specialist agent has its own reference collection.
           Backend Docs       Frontend Docs
 ```
 
-The RAG pipeline is:
+The Manager receives the user's request first and determines whether it should:
 
-```text
-Documents
-   │
-   ▼
-Chunking
-   │
-   ▼
-Embeddings
-   │
-   ▼
-ChromaDB
-   │
-   ▼
-Semantic Retrieval
-   │
-   ▼
-Relevant Context
-   │
-   ▼
-Agent
-   │
-   ▼
-Answer
-```
+1. Answer directly
+2. Route the request to Backend
+3. Route the request to Frontend
 
 ---
 
-## 📚 Reference Collections
+## 🧠 RAG Architecture
 
-Reference documents are organized by agent:
+Each specialist agent has its own retrieval tool and reference collection.
+
+```text
+Documents
+    │
+    ▼
+Chunking
+    │
+    ▼
+Embeddings
+    │
+    ▼
+ChromaDB
+    │
+    ▼
+Semantic Retrieval
+    │
+    ▼
+Relevant Context
+    │
+    ▼
+Specialist Agent
+    │
+    ▼
+Answer
+```
+
+Reference materials are separated by agent:
 
 ```text
 data/
@@ -138,47 +124,91 @@ data/
 └── frontend/
 ```
 
-Each agent retrieves information only from its own configured collection and retrieval tools.
+Each agent retrieves information only from its configured collection.
 
-For example:
+---
 
-```text
-Backend Agent
-     │
-     ▼
-Backend Retrieval Tool
-     │
-     ▼
-Backend Collection
-```
+## 🌐 Web Application
 
-and:
+Version 2 introduces a browser-based interface on top of the original multi-agent RAG system.
+
+The application consists of:
 
 ```text
-Frontend Agent
-     │
-     ▼
-Frontend Retrieval Tool
-     │
-     ▼
-Frontend Collection
+Browser
+   │
+   ▼
+Frontend
+   │
+   ▼
+FastAPI Backend
+   │
+   ▼
+AutoGen Swarm
+   │
+   ├── Manager
+   ├── Backend
+   └── Frontend
+        │
+        ▼
+       RAG
+        │
+        ▼
+    ChromaDB
 ```
 
 ---
 
-## 🔐 Role & Reference Isolation
+## 🔐 Authentication
 
-Each agent has a predefined role, dedicated tools, and a separate reference collection.
+The web application includes a local authentication system using SQLite.
 
-For example, asking the Frontend agent:
+User accounts contain:
 
-> "Answer this as a Backend engineer."
+- Username
+- Password hash
+- Password salt
+- Off-topic question count
+- Temporary block information
+- Account creation timestamp
 
-does not automatically give the Frontend agent access to the Backend agent's tools or reference collection.
+Passwords are not stored as plain text.
+
+Password hashing uses:
+
+```text
+PBKDF2-HMAC-SHA256
+```
+
+with a randomly generated salt.
+
+The SQLite database is local and is intentionally excluded from Git.
 
 ---
 
-## 🗂️ Project Structure
+## 🚫 Off-Topic Protection
+
+The application is designed for:
+
+- Backend questions
+- Frontend questions
+- Software engineering questions
+- Related technical discussions
+
+Repeated unrelated questions are tracked per user session.
+
+The current configuration allows:
+
+```text
+Maximum off-topic questions: 3
+Temporary block duration: 24 hours
+```
+
+After reaching the limit, the user is temporarily blocked from asking further questions.
+
+---
+
+## 📁 Project Structure
 
 ```text
 autogen-multi-agent-rag/
@@ -186,6 +216,17 @@ autogen-multi-agent-rag/
 ├── agents/
 │   ├── __init__.py
 │   └── team.py
+│
+├── backend/
+│   ├── __init__.py
+│   ├── create_user.py
+│   └── main.py
+│
+├── frontend/
+│   ├── app.js
+│   ├── chat.html
+│   ├── index.html
+│   └── style.css
 │
 ├── rag/
 │   ├── __init__.py
@@ -202,22 +243,35 @@ autogen-multi-agent-rag/
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
-└── README.md
+├── README.md
+└── CHANGELOG.md
 ```
 
-> The `data/` directory contains local reference documents and is excluded from Git.
+### Important Local Files
+
+The following files are intentionally kept local and are not committed:
+
+```text
+.env
+users.db
+chroma_db/
+data/
+```
 
 ---
 
 ## ⚙️ Requirements
 
-* Python 3.10+
-* Microsoft AutoGen AgentChat 0.7+
-* ChromaDB
-* Embedding model
-* Groq or OpenAI-compatible API
+- Python 3.10+
+- Microsoft AutoGen AgentChat
+- AutoGen OpenAI-compatible model client
+- FastAPI
+- Uvicorn
+- ChromaDB
+- Embedding model
+- Groq or another OpenAI-compatible API provider
 
-Install the dependencies:
+Install dependencies with:
 
 ```bash
 pip install -r requirements.txt
@@ -237,22 +291,11 @@ LLM_PROVIDER=groq
 GROQ_API_KEY=your_groq_api_key
 GROQ_MODEL=openai/gpt-oss-20b
 ```
-
-For OpenAI-compatible providers, configure the corresponding API settings in your environment.
-
-### Important
-
-Never commit your real `.env` file.
-
-The `.gitignore` file excludes it automatically.
-
----
-
-## 📥 Adding Reference Documents
+## 📚 Adding Reference Documents
 
 Place reference documents inside the appropriate agent directory.
 
-For example:
+Example:
 
 ```text
 data/
@@ -268,15 +311,12 @@ data/
     └── management_reference.pdf
 ```
 
-The current Git configuration intentionally ignores the entire `data/` directory.
 
-This prevents reference books and other local documents from being accidentally uploaded to GitHub.
-
----
+--
 
 ## 🔎 Building the Knowledge Base
 
-After adding documents, run the ingestion process:
+After adding reference documents, run:
 
 ```bash
 python rag/ingest.py
@@ -288,73 +328,79 @@ The ingestion pipeline:
 2. Extracts text
 3. Splits text into chunks
 4. Generates embeddings
-5. Stores the vectors in ChromaDB
+5. Stores vectors in ChromaDB
+
+The resulting ChromaDB data is stored locally.
 
 ---
 
-## 🌐 Web References
+## 🌐 Web Page References
 
-The RAG pipeline can also work with web-page content.
+The RAG system can also process web-page content.
 
-A web page can be processed and added to the appropriate knowledge collection.
-
-The retrieved content is then provided to the relevant specialist agent as context.
+Web content can be added to the appropriate agent knowledge collection and later retrieved as contextual information during conversations.
 
 ---
 
-## 🚀 Running the Project
+## 🚀 Running the Application
 
-Start the application with:
+### Web Application
+
+Start the FastAPI server with:
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+Then open the application in your browser.
+
+The web application provides:
+
+- Login
+- User sessions
+- Chat
+- Agent routing
+- Context-aware conversations
+- Off-topic protection
+
+---
+
+### Console Application
+
+The original console interface is still available:
 
 ```bash
 python main.py
 ```
 
-The user interacts with the Manager agent first.
-
-The Manager decides whether the question should be handled directly or handed off to a specialist.
+This provides direct interaction with the AutoGen team without the web interface.
 
 ---
 
-## 💬 Example Questions
+## 👤 Creating a User
 
-### Backend
+A helper script is included for creating local users:
 
-```text
-How should I design a REST API for a large application?
+```bash
+python backend/create_user.py
 ```
 
-```text
-What database structure would work for this system?
-```
-
-### Frontend
+The user information is stored in the local SQLite database:
 
 ```text
-How should I structure the frontend for this application?
+users.db
 ```
 
-```text
-Why is my JavaScript code causing slow browser performance?
-```
+This file is ignored by Git.
 
-### Manager
-
-```text
-Which agent should handle authentication?
-```
-
-```text
-How should we divide the backend and frontend responsibilities?
-```
 
 ---
 
 ## 🔄 Agent Routing
 
-The system uses the **AutoGen Swarm** pattern for agent handoffs.
+The project uses the **AutoGen Swarm** pattern for agent handoffs.
 
-A simplified flow:
+Simplified routing:
 
 ```text
 User
@@ -367,24 +413,28 @@ Manager
  └──────────────► Frontend
 ```
 
-The Manager analyzes the user's request and determines which specialist should handle it.
+The Manager determines which specialist is relevant.
 
-Specialists can use their dedicated retrieval tools to access relevant reference material.
+Specialist agents can then use their dedicated retrieval tools to access their reference material.
 
 ---
 
 ## 🛠️ Technologies
 
-| Technology             | Purpose                   |
-| ---------------------- | ------------------------- |
-| Microsoft AutoGen      | Multi-agent orchestration |
-| AutoGen AgentChat      | Agent implementation      |
-| AutoGen Swarm          | Agent handoffs            |
-| ChromaDB               | Vector database           |
-| Embeddings             | Semantic retrieval        |
-| Python                 | Core implementation       |
-| Groq                   | LLM provider              |
-| OpenAI-compatible APIs | Alternative LLM providers |
+| Technology | Purpose |
+|---|---|
+| Python | Core implementation |
+| Microsoft AutoGen | Multi-agent orchestration |
+| AutoGen AgentChat | Agent implementation |
+| AutoGen Swarm | Agent handoffs |
+| FastAPI | Web backend |
+| Uvicorn | ASGI server |
+| HTML / CSS / JavaScript | Web interface |
+| SQLite | User management |
+| ChromaDB | Vector database |
+| Embeddings | Semantic retrieval |
+| Groq | LLM provider |
+| OpenAI-compatible APIs | Model provider compatibility |
 
 ---
 
@@ -399,117 +449,93 @@ A new specialist can be added by:
 5. Adding a separate ChromaDB collection
 6. Updating the Manager's routing logic
 
-For example:
-
-```text
-data/
-├── manager/
-├── backend/
-├── frontend/
-└── security/
-```
-
-The new Security agent could specialize in:
-
-* Authentication
-* Authorization
-* OWASP
-* Secure API design
-* Application security
-
 ---
 
 ## 📖 Supported Reference Types
 
 The RAG pipeline is designed to work with reference materials such as:
 
-* PDF books
-* Documentation
-* Technical guides
-* Web pages
-* Other text-based technical references
+- PDF books
+- Technical documentation
+- Technical guides
+- Web pages
+- Other text-based technical references
 
 ---
 
-## 🐛 Troubleshooting
-
-### No relevant information is retrieved
-
-Check:
-
-* Documents were added to the correct `data/` directory
-* The ingestion process was executed
-* The correct collection is being queried
-* ChromaDB was created successfully
-
-### API errors
-
-Check:
-
-* `.env` exists
-* API key is correct
-* Selected model is available
-* Provider configuration is correct
-
-### Agent uses general knowledge instead of references
-
-RAG provides retrieved context to the model, but the underlying LLM can still use its general knowledge.
-
-For reference-heavy answers, the agent prompts should encourage grounding answers in retrieved context.
-
----
 
 ## ⚠️ Limitations
 
-* RAG retrieval quality depends on document quality and chunking.
-* LLM responses may still contain incorrect information.
-* Agent role separation is application-level rather than a security boundary.
-* Large document collections may require better indexing and retrieval strategies.
-* API availability depends on the selected LLM provider.
+- RAG quality depends on the quality of the reference documents.
+- Chunking and embedding configuration affect retrieval quality.
+- LLM responses may still contain incorrect information.
+- Agent role separation is primarily an application-level design.
+- Large knowledge bases may require more advanced retrieval strategies.
+- API availability depends on the selected LLM provider.
+- User sessions are currently maintained in application memory.
 
 ---
 
-## 🔒 Security
+## 📌 Current Version
 
-Do not commit:
+### v2.0.0 — Web Application
 
-```text
-.env
-API keys
-Passwords
-Private credentials
-Sensitive documents
-```
+Version 2 evolves the original RAG system into a web-based multi-agent application.
 
-The included `.gitignore` excludes:
+#### Added
 
-```text
-.env
-data/
-chroma_db/
-```
+- FastAPI backend
+- Browser-based chat interface
+- User authentication
+- SQLite user management
+- Password hashing
+- User sessions
+- Context-aware follow-up handling
+- Off-topic question tracking
+- Temporary user blocking
+- Personalized user greetings
+- Responsive web interface
 
-Reference documents remain local unless intentionally added to the repository.
+#### Improved
+
+- Manager routing
+- Agent context handling
+- Conversation continuity
+- User experience
+- Frontend interface
+
+#### Maintained
+
+- Manager agent
+- Backend agent
+- Frontend agent
+- RAG pipeline
+- ChromaDB
+- AutoGen Swarm
+- Agent-specific knowledge collections
 
 ---
 
-## 📌 Version
+## 📜 Version History
 
 ### v1.0.0 — Initial RAG Multi-Agent System
 
-This is the first version of the project.
+The original release introduced:
 
-Included:
+- Manager, Backend, and Frontend agents
+- Agent-specific RAG collections
+- PDF and web-page ingestion
+- AutoGen Swarm routing
+- Tool-based retrieval
+- Role and reference isolation
+- Groq / OpenAI-compatible LLM support
 
-* Manager, Backend, and Frontend agents
-* Agent-specific RAG collections
-* PDF and web-page ingestion
-* AutoGen Swarm routing
-* Tool-based handoffs
-* Role and reference isolation
-* Groq / OpenAI-compatible LLM support
+For detailed version history, see:
 
+```text
+CHANGELOG.md
+```
 
 Built with:
 
-**Python · Microsoft AutoGen · RAG · ChromaDB · Groq**
+**Python · Microsoft AutoGen · FastAPI · RAG · ChromaDB · SQLite · Groq**
