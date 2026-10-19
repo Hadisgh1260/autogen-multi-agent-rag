@@ -1,4 +1,4 @@
-# AutoGen RAG Team
+# 🤖 AutoGen RAG Team
 
 A multi-agent RAG web application built with **Microsoft AutoGen AgentChat**, where a Manager agent coordinates specialized Backend and Frontend agents.
 
@@ -32,6 +32,8 @@ The project started as a console-based RAG system and evolved into a web applica
 - 🧠 Context-aware follow-up questions
 - 🚫 Off-topic question protection
 - ⏱️ Temporary blocking after repeated off-topic questions
+- 🛡️ Cloudflare Turnstile integration for login protection
+- 🗂️ Chat history sidebar and conversation navigation
 - 📱 Responsive web interface
 - ⌨️ Enter-to-send and Shift+Enter for new lines
 
@@ -130,7 +132,7 @@ Each agent retrieves information only from its configured collection.
 
 ## 🌐 Web Application
 
-Version 2 introduces a browser-based interface on top of the original multi-agent RAG system.
+The web application builds on the original multi-agent RAG system and provides a browser-based interface for interacting with the agents.
 
 The application consists of:
 
@@ -157,6 +159,8 @@ AutoGen Swarm
     ChromaDB
 ```
 
+The interface supports login, chat, contextual follow-up questions, and navigation through the chat history interface.
+
 ---
 
 ## 🔐 Authentication
@@ -182,7 +186,23 @@ PBKDF2-HMAC-SHA256
 
 with a randomly generated salt.
 
+### 🛡️ Cloudflare Turnstile
+
+Cloudflare Turnstile has been added to the login flow to help protect against automated login attempts.
+
+Turnstile verification must be configured with the appropriate site key and secret key. These values should be stored in environment variables and should not be committed to Git.
+
 The SQLite database is local and is intentionally excluded from Git.
+
+---
+
+## 🗂️ Chat History
+
+The latest version includes frontend updates for navigating chat history through a sidebar.
+
+The chat interface has been updated to make it easier to move between conversations.
+
+The history navigation interface should be tested with multiple users and across browser sessions to verify the expected behavior and confirm whether conversations persist as intended.
 
 ---
 
@@ -258,6 +278,8 @@ chroma_db/
 data/
 ```
 
+These files may contain configuration, user information, vector database data, or reference documents that are maintained separately from the repository.
+
 ---
 
 ## ⚙️ Requirements
@@ -291,6 +313,13 @@ LLM_PROVIDER=groq
 GROQ_API_KEY=your_groq_api_key
 GROQ_MODEL=openai/gpt-oss-20b
 ```
+
+Add any additional environment variables required by your current configuration, including the Cloudflare Turnstile keys if they are used by the application.
+
+⚠️ Never commit real API keys, passwords, or secret values to GitHub.
+
+---
+
 ## 📚 Adding Reference Documents
 
 Place reference documents inside the appropriate agent directory.
@@ -311,8 +340,7 @@ data/
     └── management_reference.pdf
 ```
 
-
---
+---
 
 ## 🔎 Building the Knowledge Base
 
@@ -352,7 +380,7 @@ Start the FastAPI server with:
 uvicorn backend.main:app --reload
 ```
 
-Then open the application in your browser.
+Then open the application in your browser using the local address and port configured by the application.
 
 The web application provides:
 
@@ -362,8 +390,7 @@ The web application provides:
 - Agent routing
 - Context-aware conversations
 - Off-topic protection
-
----
+- Chat history navigation
 
 ### Console Application
 
@@ -392,7 +419,6 @@ users.db
 ```
 
 This file is ignored by Git.
-
 
 ---
 
@@ -435,6 +461,7 @@ Specialist agents can then use their dedicated retrieval tools to access their r
 | Embeddings | Semantic retrieval |
 | Groq | LLM provider |
 | OpenAI-compatible APIs | Model provider compatibility |
+| Cloudflare Turnstile | Login protection |
 
 ---
 
@@ -463,7 +490,6 @@ The RAG pipeline is designed to work with reference materials such as:
 
 ---
 
-
 ## ⚠️ Limitations
 
 - RAG quality depends on the quality of the reference documents.
@@ -473,14 +499,31 @@ The RAG pipeline is designed to work with reference materials such as:
 - Large knowledge bases may require more advanced retrieval strategies.
 - API availability depends on the selected LLM provider.
 - User sessions are currently maintained in application memory.
+- Chat history behavior should be verified before relying on persistent conversation storage.
+- Turnstile protection depends on correct configuration and server-side verification.
 
 ---
 
 ## 📌 Current Version
 
+### v3.0.0 — Chat History & Login Protection
+
+Version 3.0.0 includes updates to the login flow and chat interface.
+
+#### Added
+
+- Cloudflare Turnstile integration for login protection
+- Chat history sidebar and conversation navigation
+
+#### Improved
+
+- Backend login handling
+- Frontend chat interface
+- Frontend HTML, CSS, and JavaScript
+
 ### v2.0.0 — Web Application
 
-Version 2 evolves the original RAG system into a web-based multi-agent application.
+Version 2 evolved the original RAG system into a web-based multi-agent application.
 
 #### Added
 
@@ -518,6 +561,14 @@ Version 2 evolves the original RAG system into a web-based multi-agent applicati
 
 ## 📜 Version History
 
+### v3.0.0 — Chat History & Login Protection
+
+Added Cloudflare Turnstile integration and updated the chat interface with history navigation.
+
+### v2.0.0 — Web Application
+
+Introduced the web interface, authentication, user sessions, and contextual conversations.
+
 ### v1.0.0 — Initial RAG Multi-Agent System
 
 The original release introduced:
@@ -535,6 +586,8 @@ For detailed version history, see:
 ```text
 CHANGELOG.md
 ```
+
+---
 
 Built with:
 
