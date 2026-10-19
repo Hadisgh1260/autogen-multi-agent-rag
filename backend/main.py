@@ -1,12 +1,17 @@
 import asyncio
 import hashlib
 import hmac
+import os
 import secrets
 import sqlite3
+
+import requests
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import FileResponse
@@ -29,12 +34,60 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 
 
 # ============================================================
+# ENVIRONMENT
+# ============================================================
+
+load_dotenv(BASE_DIR / ".env")
+
+TURNSTILE_SECRET_KEY = os.getenv(
+    "TURNSTILE_SECRET_KEY"
+)
+
+
+# ============================================================
 # SETTINGS
 # ============================================================
 
 MAX_OFF_TOPIC = 3
 BLOCK_HOURS = 24
 OFF_TOPIC_TAG = "[OFF-TOPIC]"
+
+
+# ============================================================
+# CLOUDFLARE TURNSTILE
+# ============================================================
+
+TURNSTILE_VERIFY_URL = (
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+)
+
+
+def verify_turnstile(
+    token: str,
+) -> bool:
+
+    if not TURNSTILE_SECRET_KEY:
+
+        raise RuntimeError(
+            "TURNSTILE_SECRET_KEY is not configured."
+        )
+
+    response = requests.post(
+        TURNSTILE_VERIFY_URL,
+        data={
+            "secret": TURNSTILE_SECRET_KEY,
+            "response": token,
+        },
+        timeout=10,
+    )
+
+    response.raise_for_status()
+
+    result = response.json()
+
+    return bool(
+        result.get("success", False)
+    )
 
 
 # ============================================================
@@ -52,12 +105,16 @@ app = FastAPI(
 # ============================================================
 
 def get_db():
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+
     return conn
 
 
 def init_db():
+
     conn = get_db()
 
     conn.execute(
@@ -74,6 +131,42 @@ def init_db():
         """
     )
 
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL DEFAULT 'New chat',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_updated "
+        "ON chat_sessions(user_id, updated_at DESC)"
+    )
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_session "
+        "ON chat_messages(session_id, id ASC)"
+    )
+
     conn.commit()
     conn.close()
 
@@ -86,6 +179,7 @@ def hash_password(
     password: str,
     salt: Optional[str] = None,
 ):
+
     if salt is None:
         salt = secrets.token_hex(16)
 
@@ -104,6 +198,7 @@ def verify_password(
     stored_hash: str,
     stored_salt: str,
 ):
+
     calculated_hash, _ = hash_password(
         password,
         stored_salt,
@@ -182,6 +277,217 @@ def update_off_topic_count(
 
 
 # ============================================================
+# CHAT HISTORY HELPERS
+# ============================================================
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def create_chat_session(
+    user_id: int,
+    title: str = "New chat",
+):
+
+    timestamp = now_iso()
+
+    conn = get_db()
+
+    cursor = conn.execute(
+        """
+        INSERT INTO chat_sessions (
+            user_id, title, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            title,
+            timestamp,
+            timestamp,
+        ),
+    )
+
+    chat_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    return int(chat_id)
+
+
+def get_chat_session(
+    chat_id: int,
+    user_id: int,
+):
+
+    conn = get_db()
+
+    chat = conn.execute(
+        """
+        SELECT *
+        FROM chat_sessions
+        WHERE id = ? AND user_id = ?
+        """,
+        (chat_id, user_id),
+    ).fetchone()
+
+    conn.close()
+
+    return chat
+
+
+def get_chat_sessions(user_id: int):
+
+    conn = get_db()
+
+    chats = conn.execute(
+        """
+        SELECT id, user_id, title, created_at, updated_at
+        FROM chat_sessions
+        WHERE user_id = ?
+        ORDER BY updated_at DESC, id DESC
+        """,
+        (user_id,),
+    ).fetchall()
+
+    conn.close()
+
+    return chats
+
+
+def get_chat_messages(
+    chat_id: int,
+):
+
+    conn = get_db()
+
+    messages = conn.execute(
+        """
+        SELECT id, session_id, role, content, created_at
+        FROM chat_messages
+        WHERE session_id = ?
+        ORDER BY id ASC
+        """,
+        (chat_id,),
+    ).fetchall()
+
+    conn.close()
+
+    return messages
+
+
+def add_chat_message(
+    chat_id: int,
+    role: str,
+    content: str,
+):
+
+    timestamp = now_iso()
+
+    conn = get_db()
+
+    conn.execute(
+        """
+        INSERT INTO chat_messages (
+            session_id, role, content, created_at
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            chat_id,
+            role,
+            content,
+            timestamp,
+        ),
+    )
+
+    conn.execute(
+        """
+        UPDATE chat_sessions
+        SET updated_at = ?
+        WHERE id = ?
+        """,
+        (timestamp, chat_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def make_chat_title(question: str):
+
+    title = " ".join(
+        question.strip().split()
+    )
+
+    if not title:
+        return "New chat"
+
+    if len(title) <= 48:
+        return title
+
+    return title[:48].rstrip() + "..."
+
+
+def set_chat_title_if_new(
+    chat_id: int,
+    question: str,
+):
+
+    conn = get_db()
+
+    chat = conn.execute(
+        """
+        SELECT title
+        FROM chat_sessions
+        WHERE id = ?
+        """,
+        (chat_id,),
+    ).fetchone()
+
+    if chat and chat["title"] == "New chat":
+
+        conn.execute(
+            """
+            UPDATE chat_sessions
+            SET title = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                make_chat_title(question),
+                now_iso(),
+                chat_id,
+            ),
+        )
+
+        conn.commit()
+
+    conn.close()
+
+
+def delete_chat_session(
+    chat_id: int,
+    user_id: int,
+):
+
+    conn = get_db()
+
+    cursor = conn.execute(
+        """
+        DELETE FROM chat_sessions
+        WHERE id = ? AND user_id = ?
+        """,
+        (chat_id, user_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return cursor.rowcount > 0
+
+
+# ============================================================
 # SESSIONS
 # ============================================================
 
@@ -205,12 +511,14 @@ def get_current_user(
 ):
 
     if not authorization:
+
         raise HTTPException(
             status_code=401,
             detail="Authentication required.",
         )
 
     if not authorization.startswith("Bearer "):
+
         raise HTTPException(
             status_code=401,
             detail="Invalid authorization header.",
@@ -221,6 +529,7 @@ def get_current_user(
     session = sessions.get(token)
 
     if session is None:
+
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired session.",
@@ -231,6 +540,7 @@ def get_current_user(
     )
 
     if user is None:
+
         raise HTTPException(
             status_code=401,
             detail="User not found.",
@@ -292,8 +602,8 @@ def remaining_block_time(user):
 # AUTO-GEN TEAM STORAGE
 # ============================================================
 
-# One Swarm per logged-in user.
-# This keeps the AutoGen conversation context between requests.
+# One Swarm per user + chat.
+# This keeps AutoGen context isolated between conversations.
 
 user_teams = {}
 team_locks = {}
@@ -306,45 +616,67 @@ last_agents = {}
 last_answers = {}
 
 
-def get_team(user_id: int):
-
-    if user_id not in user_teams:
-        user_teams[user_id] = build_team()
-
-    if user_id not in team_locks:
-        team_locks[user_id] = asyncio.Lock()
-
-    return user_teams[user_id]
+def chat_team_key(user_id: int, chat_id: int):
+    return (user_id, chat_id)
 
 
-async def reset_user_team(user_id: int):
+def get_team(
+    user_id: int,
+    chat_id: int,
+):
 
-    team = user_teams.get(user_id)
+    key = chat_team_key(
+        user_id,
+        chat_id,
+    )
+
+    if key not in user_teams:
+        user_teams[key] = build_team()
+
+    if key not in team_locks:
+        team_locks[key] = asyncio.Lock()
+
+    return user_teams[key]
+
+
+async def reset_chat_team(
+    user_id: int,
+    chat_id: int,
+):
+
+    key = chat_team_key(
+        user_id,
+        chat_id,
+    )
+
+    team = user_teams.get(key)
 
     if team is not None:
 
         try:
             await team.reset()
-
         except Exception:
-            # If the existing team is already broken,
-            # discard it and create a fresh one next time.
             pass
 
-    user_teams.pop(
-        user_id,
-        None,
-    )
+    user_teams.pop(key, None)
+    team_locks.pop(key, None)
+    last_agents.pop(key, None)
+    last_answers.pop(key, None)
 
-    last_agents.pop(
-        user_id,
-        None,
-    )
 
-    last_answers.pop(
-        user_id,
-        None,
-    )
+async def reset_user_teams(user_id: int):
+
+    keys = [
+        key
+        for key in user_teams
+        if key[0] == user_id
+    ]
+
+    for key in keys:
+        await reset_chat_team(
+            key[0],
+            key[1],
+        )
 
 
 # ============================================================
@@ -352,6 +684,7 @@ async def reset_user_team(user_id: int):
 # ============================================================
 
 def is_follow_up(text: str) -> bool:
+
     """
     Detect short follow-up messages that clearly refer to the
     previous answer.
@@ -447,6 +780,7 @@ def is_follow_up(text: str) -> bool:
     words = normalized.split()
 
     if len(words) <= 7:
+
         if any(
             normalized.startswith(
                 prefix
@@ -462,6 +796,7 @@ def is_follow_up(text: str) -> bool:
                 "can you explain it",
             )
         ):
+
             return True
 
         if (
@@ -476,12 +811,14 @@ def is_follow_up(text: str) -> bool:
                 "ok",
             }
         ):
+
             return True
 
         if any(
             word in normalized
             for word in reference_words
         ):
+
             if normalized.startswith(
                 (
                     "why ",
@@ -491,6 +828,7 @@ def is_follow_up(text: str) -> bool:
                     "could you ",
                 )
             ):
+
                 return True
 
     return False
@@ -539,7 +877,7 @@ def build_recovery_question(
 async def run_team(
     team,
     task,
-    user_id: int,
+    state_key,
 ):
 
     result = None
@@ -634,7 +972,7 @@ async def run_team(
 
     if detected_last_agent:
 
-        last_agents[user_id] = (
+        last_agents[state_key] = (
             detected_last_agent
         )
 
@@ -644,7 +982,7 @@ async def run_team(
 
     if answer:
 
-        last_answers[user_id] = answer
+        last_answers[state_key] = answer
 
     return (
         result,
@@ -660,21 +998,30 @@ async def run_team(
 
 async def run_chat_turn(
     user_id: int,
+    chat_id: int,
     question: str,
 ):
 
-    team = get_team(user_id)
+    state_key = chat_team_key(
+        user_id,
+        chat_id,
+    )
 
-    lock = team_locks[user_id]
+    team = get_team(
+        user_id,
+        chat_id,
+    )
+
+    lock = team_locks[state_key]
 
     async with lock:
 
         previous_agent = last_agents.get(
-            user_id
+            state_key
         )
 
         previous_answer = last_answers.get(
-            user_id
+            state_key
         )
 
         # ----------------------------------------------------
@@ -719,7 +1066,7 @@ async def run_chat_turn(
             return await run_team(
                 team,
                 task,
-                user_id,
+                state_key,
             )
 
         except Exception as first_error:
@@ -733,12 +1080,14 @@ async def run_chat_turn(
             # fresh team and retry the current question.
             # ------------------------------------------------
 
-            await reset_user_team(
-                user_id
+            await reset_chat_team(
+                user_id,
+                chat_id,
             )
 
             retry_team = get_team(
-                user_id
+                user_id,
+                chat_id,
             )
 
             recovery_question = (
@@ -758,7 +1107,7 @@ async def run_chat_turn(
                 return await run_team(
                     retry_team,
                     retry_task,
-                    user_id,
+                    state_key,
                 )
 
             except Exception as second_error:
@@ -922,11 +1271,13 @@ class LoginRequest(BaseModel):
 
     username: str
     password: str
+    turnstile_token: str
 
 
 class QuestionRequest(BaseModel):
 
     question: str
+    chat_id: Optional[int] = None
 
 
 # ============================================================
@@ -947,6 +1298,59 @@ async def startup():
 async def login(
     data: LoginRequest,
 ):
+
+    # --------------------------------------------------------
+    # CLOUDFLARE TURNSTILE VERIFICATION
+    # --------------------------------------------------------
+
+    if not data.turnstile_token.strip():
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Please complete the security verification."
+            ),
+        )
+
+    try:
+
+        turnstile_valid = verify_turnstile(
+            data.turnstile_token
+        )
+
+    except requests.RequestException:
+
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Security verification service is "
+                "temporarily unavailable. Please try again."
+            ),
+        )
+
+    except RuntimeError:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Security verification is not configured "
+                "correctly on the server."
+            ),
+        )
+
+    if not turnstile_valid:
+
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Security verification failed. "
+                "Please try again."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # USERNAME / PASSWORD
+    # --------------------------------------------------------
 
     user = get_user(
         data.username.strip()
@@ -974,6 +1378,10 @@ async def login(
             ),
         )
 
+    # --------------------------------------------------------
+    # BLOCK CHECK
+    # --------------------------------------------------------
+
     if is_user_blocked(user):
 
         user = get_user_by_id(
@@ -991,6 +1399,10 @@ async def login(
                     remaining_block_time(user),
             },
         )
+
+    # --------------------------------------------------------
+    # CREATE SESSION
+    # --------------------------------------------------------
 
     token = create_session(
         user["id"]
@@ -1087,6 +1499,139 @@ async def me(
 
 
 # ============================================================
+# CHAT HISTORY API
+# ============================================================
+
+@app.post("/api/chats")
+async def create_chat(
+    authorization: Optional[str] = Header(None),
+):
+
+    user = get_current_user(authorization)
+
+    chat_id = create_chat_session(
+        user["id"]
+    )
+
+    return {
+        "id": chat_id,
+        "title": "New chat",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+
+
+@app.get("/api/chats")
+async def list_chats(
+    authorization: Optional[str] = Header(None),
+):
+
+    user = get_current_user(authorization)
+
+    chats = get_chat_sessions(
+        user["id"]
+    )
+
+    if not chats:
+        chat_id = create_chat_session(
+            user["id"]
+        )
+        chats = get_chat_sessions(
+            user["id"]
+        )
+    else:
+        chat_id = int(chats[0]["id"])
+
+    return {
+        "chats": [dict(chat) for chat in chats],
+        "active_chat_id": chat_id,
+    }
+
+
+@app.get("/api/chats/{chat_id}")
+async def get_chat(
+    chat_id: int,
+    authorization: Optional[str] = Header(None),
+):
+
+    user = get_current_user(authorization)
+
+    chat = get_chat_session(
+        chat_id,
+        user["id"],
+    )
+
+    if chat is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Chat not found.",
+        )
+
+    return {
+        "chat": dict(chat),
+        "messages": [
+            dict(message)
+            for message in get_chat_messages(chat_id)
+        ],
+    }
+
+
+@app.delete("/api/chats/{chat_id}")
+async def delete_chat(
+    chat_id: int,
+    authorization: Optional[str] = Header(None),
+):
+
+    user = get_current_user(authorization)
+
+    chat = get_chat_session(
+        chat_id,
+        user["id"],
+    )
+
+    if chat is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Chat not found.",
+        )
+
+    deleted = delete_chat_session(
+        chat_id,
+        user["id"],
+    )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Chat not found.",
+        )
+
+    await reset_chat_team(
+        user["id"],
+        chat_id,
+    )
+
+    chats = get_chat_sessions(
+        user["id"]
+    )
+
+    if not chats:
+        new_chat_id = create_chat_session(
+            user["id"]
+        )
+        chats = get_chat_sessions(
+            user["id"]
+        )
+    else:
+        new_chat_id = int(chats[0]["id"])
+
+    return {
+        "chats": [dict(item) for item in chats],
+        "active_chat_id": new_chat_id,
+    }
+
+
+# ============================================================
 # CHAT
 # ============================================================
 
@@ -1112,6 +1657,31 @@ async def chat(
     )
 
     user_id = user["id"]
+
+    # --------------------------------------------------------
+    # RESOLVE CHAT
+    # --------------------------------------------------------
+
+    chat_id = data.chat_id
+
+    if chat_id is None:
+
+        chat_id = create_chat_session(
+            user_id
+        )
+
+    else:
+
+        chat = get_chat_session(
+            chat_id,
+            user_id,
+        )
+
+        if chat is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Chat not found.",
+            )
 
     # --------------------------------------------------------
     # CHECK BLOCK
@@ -1159,7 +1729,7 @@ async def chat(
             blocked_until,
         )
 
-        await reset_user_team(
+        await reset_user_teams(
             user_id
         )
 
@@ -1177,6 +1747,21 @@ async def chat(
         )
 
     # --------------------------------------------------------
+    # SAVE USER MESSAGE
+    # --------------------------------------------------------
+
+    add_chat_message(
+        chat_id,
+        "user",
+        question,
+    )
+
+    set_chat_title_if_new(
+        chat_id,
+        question,
+    )
+
+    # --------------------------------------------------------
     # RUN AUTOGEN
     # --------------------------------------------------------
 
@@ -1189,14 +1774,16 @@ async def chat(
             _detected_last_agent,
         ) = await run_chat_turn(
             user_id,
+            chat_id,
             question,
         )
 
     except Exception as exc:
 
         # Never keep a broken Swarm alive.
-        await reset_user_team(
-            user_id
+        await reset_chat_team(
+            user_id,
+            chat_id,
         )
 
         raise HTTPException(
@@ -1238,13 +1825,20 @@ async def chat(
             blocked_until,
         )
 
-        await reset_user_team(
+        await reset_user_teams(
             user_id
+        )
+
+        add_chat_message(
+            chat_id,
+            "assistant",
+            OFF_TOPIC_TAG,
         )
 
         if blocked_until:
 
             return {
+                "chat_id": chat_id,
                 "answer":
                     OFF_TOPIC_TAG,
                 "off_topic_count":
@@ -1260,6 +1854,7 @@ async def chat(
             }
 
         return {
+            "chat_id": chat_id,
             "answer":
                 OFF_TOPIC_TAG,
             "off_topic_count":
@@ -1278,11 +1873,18 @@ async def chat(
     # NORMAL ANSWER
     # --------------------------------------------------------
 
+    add_chat_message(
+        chat_id,
+        "assistant",
+        answer,
+    )
+
     current_user = get_user_by_id(
         user_id
     )
 
     return {
+        "chat_id": chat_id,
         "answer":
             answer,
         "off_topic_count":

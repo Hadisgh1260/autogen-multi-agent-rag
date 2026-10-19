@@ -17,6 +17,13 @@
         href="/static/style.css"
     >
 
+    <!-- Cloudflare Turnstile -->
+    <script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        async
+        defer
+    ></script>
+
 </head>
 
 <body>
@@ -61,6 +68,12 @@
                     required
                 >
 
+                <!-- Cloudflare Turnstile -->
+                <div
+                    class="cf-turnstile"
+                    data-sitekey="0x4AAAAAAFOIOhMPQcX4qpKR"
+                ></div>
+
                 <button
                     type="submit"
                     class="primary-button"
@@ -84,4 +97,3 @@
 </body>
 
 </html>
-

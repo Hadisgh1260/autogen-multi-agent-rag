@@ -1,808 +1,649 @@
+
 const API_BASE = "";
 
+let activeChatId = null;
+let isLoadingChat = false;
+let isSending = false;
+let authToken = localStorage.getItem("auth_token") || "";
 
-/* =========================================================
-   STORAGE
-   ========================================================= */
+const $ = (id) => document.getElementById(id);
 
-function getToken() {
-    return localStorage.getItem("auth_token");
-}
-
-
-function setToken(token) {
-    localStorage.setItem("auth_token", token);
-}
-
-
-function clearToken() {
-    localStorage.removeItem("auth_token");
-}
-
-
-/* =========================================================
-   HELPERS
-   ========================================================= */
-
-function authHeaders() {
+function authHeaders(extra = {}) {
     return {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${getToken()}`
+        ...extra,
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
     };
 }
 
+async function apiRequest(url, options = {}) {
+    const response = await fetch(`${API_BASE}${url}`, {
+        ...options,
+        headers: authHeaders({
+            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            ...(options.headers || {}),
+        }),
+    });
 
-function formatRemaining(seconds) {
-
-    seconds = Math.max(
-        0,
-        Math.floor(seconds)
-    );
-
-    const hours = Math.floor(
-        seconds / 3600
-    );
-
-    const minutes = Math.floor(
-        (seconds % 3600) / 60
-    );
-
-    const secs = seconds % 60;
-
-    return [
-        String(hours).padStart(2, "0"),
-        String(minutes).padStart(2, "0"),
-        String(secs).padStart(2, "0")
-    ].join(":");
-}
-
-
-/* =========================================================
-   LOGIN
-   ========================================================= */
-
-const loginForm =
-    document.getElementById("loginForm");
-
-
-if (loginForm) {
-
-    if (getToken()) {
-        window.location.href = "/chat";
+    let data = {};
+    try {
+        data = await response.json();
+    } catch {
+        // The response may have no JSON body.
     }
 
+    if (!response.ok) {
+        const error = new Error(
+            data.detail || data.message || `Request failed (${response.status})`
+        );
+        error.status = response.status;
+        error.data = data;
+        throw error;
+    }
 
-    loginForm.addEventListener(
-        "submit",
-        async function (event) {
-
-            event.preventDefault();
-
-            const username =
-                document
-                    .getElementById("username")
-                    .value
-                    .trim();
-
-            const password =
-                document
-                    .getElementById("password")
-                    .value;
-
-            const errorBox =
-                document.getElementById("loginError");
-
-            const loginButton =
-                loginForm.querySelector(
-                    "button[type='submit']"
-                );
-
-
-            errorBox.classList.add("hidden");
-
-            loginButton.disabled = true;
-
-
-            try {
-
-                const response =
-                    await fetch(
-                        `${API_BASE}/api/login`,
-                        {
-                            method: "POST",
-
-                            headers: {
-                                "Content-Type":
-                                    "application/json"
-                            },
-
-                            body: JSON.stringify({
-                                username,
-                                password
-                            })
-                        }
-                    );
-
-
-                const data =
-                    await response.json();
-
-
-                if (!response.ok) {
-
-                    let message =
-                        "Login failed.";
-
-                    if (
-                        typeof data.detail ===
-                        "string"
-                    ) {
-
-                        message =
-                            data.detail;
-
-                    } else if (
-                        data.detail &&
-                        data.detail.message
-                    ) {
-
-                        message =
-                            data.detail.message;
-                    }
-
-                    throw new Error(message);
-                }
-
-
-                setToken(data.token);
-
-                window.location.href = "/chat";
-
-            }
-
-
-            catch (error) {
-
-                errorBox.textContent =
-                    error.message ||
-                    "Login failed.";
-
-                errorBox.classList.remove(
-                    "hidden"
-                );
-            }
-
-
-            finally {
-
-                loginButton.disabled = false;
-            }
-        }
-    );
+    return data;
 }
 
-
-/* =========================================================
-   CHAT INITIALIZATION
-   ========================================================= */
-
-const chatForm =
-    document.getElementById("chatForm");
-
-
-if (chatForm) {
-    initializeChat();
+function showElement(element, visible = true) {
+    if (element) {
+        element.hidden = !visible;
+    }
 }
 
+function setText(id, value) {
+    const element = $(id);
+    if (element) element.textContent = value ?? "";
+}
 
-async function initializeChat() {
+function escapeText(value) {
+    return String(value ?? "");
+}
 
-    if (!getToken()) {
+/* ---------------------------
+   LOGIN AND AUTHENTICATION
+---------------------------- */
 
-        window.location.href = "/";
+async function handleLogin(event) {
+    event.preventDefault();
 
+    const form = $("loginForm");
+    const username = $("username")?.value.trim();
+    const password = $("password")?.value;
+    const errorElement = $("loginError");
+    const submitButton = form?.querySelector('[type="submit"]');
+
+    if (errorElement) {
+        errorElement.textContent = "";
+        errorElement.hidden = true;
+    }
+
+    if (!username || !password) {
+        showLoginError("Please enter your username and password.");
         return;
     }
 
+    const turnstileResponse =
+        document.querySelector('[name="cf-turnstile-response"]')?.value || "";
+
+    const turnstileWidget = document.querySelector(".cf-turnstile");
+
+    if (turnstileWidget && !turnstileResponse) {
+        showLoginError("Please complete the security verification.");
+        return;
+    }
+
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Signing in...";
+    }
 
     try {
+        const response = await fetch(`${API_BASE}/api/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                username,
+                password,
+                turnstile_token: turnstileResponse,
+            }),
+        });
 
-        const response =
-            await fetch(
-                `${API_BASE}/api/me`,
-                {
-                    headers:
-                        authHeaders()
-                }
-            );
+        const data = await response.json().catch(() => ({}));
 
-
-        if (response.status === 401) {
-
-            clearToken();
-
-            window.location.href = "/";
-
-            return;
-        }
-
-
-        const data =
-            await response.json();
-
-
-        const usernameLabel =
-            document.getElementById(
-                "usernameLabel"
-            );
-
-
-        if (usernameLabel) {
-
-            usernameLabel.textContent =
-                data.username;
-        }
-
-
-        updateCounter(
-            data.off_topic_count,
-            data.max_off_topic
-        );
-
-
-        /*
-         * Personalized welcome message.
-         */
-
-        addWelcomeMessage(
-            data.username
-        );
-
-
-        if (data.blocked) {
-
-            showBlocked(
-                data.remaining_seconds
+        if (!response.ok) {
+            throw new Error(
+                data.detail || data.message || "Login failed. Please try again."
             );
         }
 
-
-        const textarea =
-            document.getElementById(
-                "question"
-            );
-
-
-        if (textarea && !data.blocked) {
-
-            textarea.focus();
+        authToken = data.access_token || data.token || "";
+        if (authToken) {
+            localStorage.setItem("auth_token", authToken);
         }
 
-    }
-
-
-    catch (error) {
-
-        console.error(
-            "Chat initialization failed:",
-            error
-        );
+        window.location.href = "/chat";
+    } catch (error) {
+        showLoginError(error.message || "Unable to sign in.");
+        if (window.turnstile) {
+            window.turnstile.reset();
+        }
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = "Login";
+        }
     }
 }
 
+function showLoginError(message) {
+    const errorElement = $("loginError");
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.hidden = false;
+    } else {
+        alert(message);
+    }
+}
 
-/* =========================================================
-   WELCOME MESSAGE
-   ========================================================= */
+/* ---------------------------
+   CHAT INITIALIZATION
+---------------------------- */
 
-function addWelcomeMessage(username) {
+async function initializeChat() {
+    try {
+        const me = await apiRequest("/api/me");
 
-    const messages =
-        document.getElementById(
-            "messages"
-        );
+        const username =
+            me.username ||
+            me.user?.username ||
+            "User";
 
+        setText("usernameDisplay", username);
+        setText("welcomeUsername", username);
 
-    if (!messages) {
+        await loadChatHistory();
+    } catch (error) {
+        if (error.status === 401 || error.status === 403) {
+            localStorage.removeItem("auth_token");
+            window.location.href = "/";
+            return;
+        }
+
+        console.error("Chat initialization failed:", error);
+        showChatError("Unable to load your chats. Please refresh the page.");
+    }
+}
+
+/* ---------------------------
+   CHAT HISTORY
+---------------------------- */
+
+async function loadChatHistory() {
+    try {
+        const data = await apiRequest("/api/chats");
+        const chats = Array.isArray(data.chats) ? data.chats : [];
+
+        renderChatHistory(chats);
+
+        const selectedId =
+            data.active_chat_id ??
+            chats[0]?.id ??
+            null;
+
+        if (selectedId !== null) {
+            await openChat(selectedId, false);
+            renderChatHistory(chats);
+        } else {
+            activeChatId = null;
+            clearMessages();
+            showWelcomeMessage();
+        }
+    } catch (error) {
+        console.error("Could not load chat history:", error);
+        showChatError("Could not load chat history.");
+    }
+}
+
+function renderChatHistory(chats) {
+    const history = $("chatHistory");
+    if (!history) return;
+
+    history.replaceChildren();
+
+    if (!chats.length) {
+        const empty = document.createElement("p");
+        empty.className = "chat-history-empty";
+        empty.textContent = "No chats yet";
+        history.appendChild(empty);
         return;
     }
 
+    chats.forEach((chat) => {
+        history.appendChild(createChatHistoryItem(chat));
+    });
 
-    messages.innerHTML = "";
-
-
-    addMessage(
-        "assistant",
-        `Hi ${username}! How can I help you today?`
-    );
+    updateActiveHistoryItem();
 }
 
+function createChatHistoryItem(chat) {
+    const item = document.createElement("div");
+    item.className = "chat-history-item";
+    item.dataset.chatId = String(chat.id);
 
-/* =========================================================
-   CHAT SUBMIT
-   ========================================================= */
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "chat-history-open";
+    openButton.textContent = chat.title || "New Chat";
+    openButton.title = chat.title || "New Chat";
+    openButton.addEventListener("click", () => {
+        openChat(chat.id);
+        closeMobileSidebar();
+    });
 
-chatForm?.addEventListener(
-    "submit",
-    async function (event) {
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "chat-history-delete";
+    deleteButton.textContent = "×";
+    deleteButton.title = "Delete chat";
+    deleteButton.setAttribute("aria-label", "Delete chat");
+    deleteButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteChat(chat.id);
+    });
 
-        event.preventDefault();
+    item.append(openButton, deleteButton);
+    return item;
+}
 
+function updateActiveHistoryItem() {
+    document.querySelectorAll(".chat-history-item").forEach((item) => {
+        item.classList.toggle(
+            "active",
+            Number(item.dataset.chatId) === Number(activeChatId)
+        );
+    });
+}
 
-        const textarea =
-            document.getElementById(
-                "question"
-            );
+async function refreshChatHistory(selectedChatId = activeChatId) {
+    try {
+        const data = await apiRequest("/api/chats");
+        const chats = Array.isArray(data.chats) ? data.chats : [];
 
-        const sendButton =
-            document.getElementById(
-                "sendButton"
-            );
+        renderChatHistory(chats);
 
-
-        const question =
-            textarea.value.trim();
-
-
-        if (!question) {
-            return;
+        if (selectedChatId !== null && selectedChatId !== undefined) {
+            activeChatId = selectedChatId;
         }
 
+        updateActiveHistoryItem();
+    } catch (error) {
+        console.error("Could not refresh chat history:", error);
+    }
+}
 
-        addMessage(
-            "user",
-            question
+/* ---------------------------
+   OPEN AND CREATE CHATS
+---------------------------- */
+
+async function openChat(chatId, refreshHistory = true) {
+    if (isLoadingChat || chatId === null || chatId === undefined) {
+        return;
+    }
+
+    isLoadingChat = true;
+
+    try {
+        const data = await apiRequest(`/api/chats/${encodeURIComponent(chatId)}`);
+
+        activeChatId = data.chat?.id ?? chatId;
+
+        clearMessages();
+
+        const messages = Array.isArray(data.messages) ? data.messages : [];
+
+        if (!messages.length) {
+            showWelcomeMessage();
+        } else {
+            messages.forEach((message) => {
+                const type =
+                    message.role === "user" || message.sender === "user"
+                        ? "user"
+                        : "assistant";
+
+                addMessage(type, message.content ?? message.message ?? "");
+            });
+        }
+
+        updateActiveHistoryItem();
+
+        if (refreshHistory) {
+            await refreshChatHistory(activeChatId);
+        }
+    } catch (error) {
+        console.error("Could not open chat:", error);
+        showChatError("Unable to open this chat.");
+    } finally {
+        isLoadingChat = false;
+    }
+}
+
+async function createNewChat() {
+    try {
+        const data = await apiRequest("/api/chats", {
+            method: "POST",
+            body: JSON.stringify({}),
+        });
+
+        const chat = data.chat || data;
+
+        if (chat.id === undefined || chat.id === null) {
+            throw new Error("The server did not return a chat ID.");
+        }
+
+        activeChatId = chat.id;
+        clearMessages();
+        showWelcomeMessage();
+
+        await refreshChatHistory(activeChatId);
+        closeMobileSidebar();
+        $("question")?.focus();
+    } catch (error) {
+        console.error("Could not create a chat:", error);
+        showChatError("Unable to create a new chat.");
+    }
+}
+
+/* ---------------------------
+   DELETE CHAT
+---------------------------- */
+
+async function deleteChat(chatId) {
+    const confirmed = confirm(
+        "Are you sure you want to delete this chat?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+        const data = await apiRequest(
+            `/api/chats/${encodeURIComponent(chatId)}`,
+            { method: "DELETE" }
         );
 
+        const chats = Array.isArray(data.chats) ? data.chats : [];
+        const wasActive = Number(chatId) === Number(activeChatId);
 
-        textarea.value = "";
+        if (wasActive) {
+            const nextId =
+                data.active_chat_id ??
+                chats[0]?.id ??
+                null;
 
-        textarea.style.height = "auto";
-
-        sendButton.disabled = true;
-
-        sendButton.innerHTML =
-            "<span>Thinking...</span>";
-
-
-        try {
-
-            const response =
-                await fetch(
-                    `${API_BASE}/api/chat`,
-                    {
-                        method: "POST",
-
-                        headers:
-                            authHeaders(),
-
-                        body: JSON.stringify({
-                            question
-                        })
-                    }
-                );
-
-
-            const data =
-                await response.json();
-
-
-            /* ---------------------------------------------
-               UNAUTHORIZED
-               --------------------------------------------- */
-
-            if (
-                response.status === 401
-            ) {
-
-                clearToken();
-
-                window.location.href = "/";
-
-                return;
+            if (nextId !== null) {
+                activeChatId = nextId;
+                await openChat(nextId, false);
+            } else {
+                activeChatId = null;
+                clearMessages();
+                showWelcomeMessage();
             }
+        }
 
+        renderChatHistory(chats);
+        updateActiveHistoryItem();
+    } catch (error) {
+        console.error("Could not delete chat:", error);
+        showChatError(error.message || "Unable to delete this chat.");
+    }
+}
 
-            /* ---------------------------------------------
-               BLOCKED
-               --------------------------------------------- */
+/* ---------------------------
+   MESSAGES
+---------------------------- */
 
-            if (
-                response.status === 403
-            ) {
+function clearMessages() {
+    const messages = $("messages");
+    if (messages) messages.replaceChildren();
+}
 
-                const detail =
-                    data.detail || {};
+function showWelcomeMessage() {
+    const messages = $("messages");
+    if (!messages) return;
 
+    const welcome = document.createElement("div");
+    welcome.className = "welcome-message";
 
-                if (
-                    detail.blocked_until
-                ) {
+    const title = document.createElement("h2");
+    title.textContent = "How can I help you today?";
 
-                    showBlocked(
-                        detail.remaining_seconds ||
-                        86400
-                    );
+    const subtitle = document.createElement("p");
+    subtitle.textContent =
+        "Ask me a backend, frontend, or software-engineering question.";
 
-                } else {
+    welcome.append(title, subtitle);
+    messages.appendChild(welcome);
+}
 
-                    addMessage(
-                        "assistant",
-                        detail.message ||
-                        "Your account is currently blocked."
-                    );
-                }
+function addMessage(type, content) {
+    const messages = $("messages");
+    if (!messages) return;
 
-                return;
-            }
+    messages.querySelector(".welcome-message")?.remove();
 
+    const message = document.createElement("div");
+    message.className = `message ${type}-message`;
 
-            /* ---------------------------------------------
-               OTHER ERROR
-               --------------------------------------------- */
+    const label = document.createElement("div");
+    label.className = "message-label";
+    label.textContent = type === "user" ? "You" : "AI";
 
-            if (!response.ok) {
+    const body = document.createElement("div");
+    body.className = "message-content";
+    body.textContent = escapeText(content);
 
+    message.append(label, body);
+    messages.appendChild(message);
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function showChatError(message) {
+    console.error(message);
+
+    const errorElement = $("chatError");
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.hidden = false;
+
+        window.setTimeout(() => {
+            errorElement.hidden = true;
+        }, 5000);
+    }
+}
+
+/* ---------------------------
+   SEND MESSAGE
+---------------------------- */
+
+async function sendMessage(event) {
+    event.preventDefault();
+
+    if (isSending) return;
+
+    const questionInput = $("question");
+    const sendButton = $("sendButton");
+    const question = questionInput?.value.trim();
+
+    if (!question) return;
+
+    isSending = true;
+
+    if (sendButton) sendButton.disabled = true;
+    if (questionInput) questionInput.disabled = true;
+
+    questionInput.value = "";
+    addMessage("user", question);
+
+    try {
+        if (activeChatId === null) {
+            const created = await apiRequest("/api/chats", {
+                method: "POST",
+                body: JSON.stringify({}),
+            });
+
+            const chat = created.chat || created;
+            activeChatId = chat.id;
+        }
+
+        const data = await apiRequest("/api/chat", {
+            method: "POST",
+            body: JSON.stringify({
+                question,
+                chat_id: activeChatId,
+            }),
+        });
+
+        if (data.chat_id !== undefined && data.chat_id !== null) {
+            activeChatId = data.chat_id;
+        }
+
+        if (data.answer) {
+            addMessage("assistant", data.answer);
+        } else {
+            addMessage(
+                "assistant",
+                "I couldn't generate an answer. Please try again."
+            );
+        }
+
+        updateOffTopicCounter(data);
+        await refreshChatHistory(activeChatId);
+
+        if (data.blocked || data.blocked_until) {
+            showBlockMessage(data);
+        }
+    } catch (error) {
+        console.error("Message request failed:", error);
+
+        if (error.status === 403) {
+            const data = error.data || {};
+
+            if (data.blocked || data.blocked_until) {
+                showBlockMessage(data);
+            } else {
                 addMessage(
                     "assistant",
-                    typeof data.detail === "string"
-                        ? data.detail
-                        : "Something went wrong."
-                );
-
-                return;
-            }
-
-
-            /* ---------------------------------------------
-               NORMAL RESPONSE
-               --------------------------------------------- */
-
-            addMessage(
-                "assistant",
-                data.answer ||
-                "I could not generate an answer."
-            );
-
-
-            updateCounter(
-                data.off_topic_count,
-                data.max_off_topic
-            );
-
-
-            if (data.blocked) {
-
-                showBlocked(
-                    data.remaining_seconds
+                    data.detail || "Your request was denied."
                 );
             }
-
-        }
-
-
-        catch (error) {
-
-            console.error(
-                "Chat request failed:",
-                error
-            );
-
+        } else {
             addMessage(
                 "assistant",
-                "Could not connect to the server. Please try again."
+                error.message || "Something went wrong. Please try again."
             );
         }
+    } finally {
+        isSending = false;
 
-
-        finally {
-
-            sendButton.disabled = false;
-
-            sendButton.innerHTML =
-                "<span>Send</span><span class='send-arrow'>→</span>";
-
-            textarea.focus();
+        if (sendButton) sendButton.disabled = false;
+        if (questionInput) {
+            questionInput.disabled = false;
+            questionInput.focus();
         }
     }
-);
+}
 
+function updateOffTopicCounter(data) {
+    const count =
+        data.off_topic_count ??
+        data.off_topic ??
+        data.off_topic_attempts;
 
-/* =========================================================
-   ENTER TO SEND
-   ========================================================= */
+    const max = data.max_off_topic ?? 3;
 
-const questionInput =
-    document.getElementById(
-        "question"
-    );
-
-
-questionInput?.addEventListener(
-    "keydown",
-    function (event) {
-
-        if (
-            event.key === "Enter" &&
-            !event.shiftKey
-        ) {
-
-            event.preventDefault();
-
-            chatForm?.requestSubmit();
-        }
+    if (count !== undefined) {
+        setText("offTopicCounter", `${count}/${max}`);
+        setText("counter", `${count}/${max}`);
     }
-);
+}
 
-
-/* =========================================================
-   AUTO-RESIZE TEXTAREA
-   ========================================================= */
-
-questionInput?.addEventListener(
-    "input",
-    function () {
-
-        this.style.height = "auto";
-
-        this.style.height =
-            Math.min(
-                this.scrollHeight,
-                180
-            ) + "px";
-    }
-);
-
-
-/* =========================================================
-   ADD MESSAGE
-   ========================================================= */
-
-function addMessage(
-    type,
-    content
-) {
-
-    const messages =
-        document.getElementById(
-            "messages"
+function showBlockMessage(data) {
+    const blockBox = $("blockBox");
+    if (!blockBox) {
+        addMessage(
+            "assistant",
+            data.detail || "Your account is temporarily blocked."
         );
-
-
-    if (!messages) {
         return;
     }
 
+    blockBox.hidden = false;
+    blockBox.textContent =
+        data.detail ||
+        "Your account is temporarily blocked. Please try again later.";
 
-    const message =
-        document.createElement(
-            "div"
-        );
-
-
-    message.className =
-        `message ${type}`;
-
-
-    const label =
-        document.createElement(
-            "div"
-        );
-
-
-    label.className =
-        "message-label";
-
-
-    label.textContent =
-        type === "user"
-            ? "You"
-            : "AI";
-
-
-    const body =
-        document.createElement(
-            "div"
-        );
-
-
-    body.className =
-        "message-content";
-
-
-    body.textContent =
-        String(content ?? "");
-
-
-    message.appendChild(label);
-
-    message.appendChild(body);
-
-    messages.appendChild(message);
-
-
-    messages.scrollTop =
-        messages.scrollHeight;
+    const form = $("chatForm");
+    if (form) {
+        form.querySelectorAll("input, textarea, button").forEach((element) => {
+            element.disabled = true;
+        });
+    }
 }
 
-
-/* =========================================================
-   COUNTER
-   ========================================================= */
-
-function updateCounter(
-    count,
-    max
-) {
-
-    const counter =
-        document.getElementById(
-            "counter"
-        );
-
-
-    if (!counter) {
-        return;
-    }
-
-
-    counter.textContent =
-        `Unrelated questions: ${count} / ${max}`;
-}
-
-
-/* =========================================================
-   BLOCK SCREEN
-   ========================================================= */
-
-let countdownInterval = null;
-
-
-function showBlocked(
-    seconds
-) {
-
-    const blockBox =
-        document.getElementById(
-            "blockBox"
-        );
-
-    const chatForm =
-        document.getElementById(
-            "chatForm"
-        );
-
-    const messages =
-        document.getElementById(
-            "messages"
-        );
-
-    const countdown =
-        document.getElementById(
-            "countdown"
-        );
-
-
-    if (chatForm) {
-
-        chatForm.classList.add(
-            "hidden"
-        );
-    }
-
-
-    if (messages) {
-
-        messages.classList.add(
-            "hidden"
-        );
-    }
-
-
-    if (blockBox) {
-
-        blockBox.classList.remove(
-            "hidden"
-        );
-    }
-
-
-    if (countdownInterval) {
-
-        clearInterval(
-            countdownInterval
-        );
-    }
-
-
-    let remaining =
-        Number(seconds) || 86400;
-
-
-    if (countdown) {
-
-        countdown.textContent =
-            formatRemaining(
-                remaining
-            );
-    }
-
-
-    countdownInterval =
-        setInterval(
-            function () {
-
-                remaining--;
-
-
-                if (remaining <= 0) {
-
-                    clearInterval(
-                        countdownInterval
-                    );
-
-                    window.location.reload();
-
-                    return;
-                }
-
-
-                if (countdown) {
-
-                    countdown.textContent =
-                        formatRemaining(
-                            remaining
-                        );
-                }
-
-            },
-            1000
-        );
-}
-
-
-/* =========================================================
+/* ---------------------------
    LOGOUT
-   ========================================================= */
+---------------------------- */
 
-const logoutButton =
-    document.getElementById(
-        "logoutButton"
-    );
-
-
-logoutButton?.addEventListener(
-    "click",
-    async function () {
-
-        logoutButton.disabled = true;
-
-
-        try {
-
-            await fetch(
-                `${API_BASE}/api/logout`,
-                {
-                    method: "POST",
-
-                    headers:
-                        authHeaders()
-                }
-            );
-
-        }
-
-        catch (error) {
-
-            console.error(
-                "Logout failed:",
-                error
-            );
-        }
-
-
-        clearToken();
-
+async function logout() {
+    try {
+        await apiRequest("/api/logout", { method: "POST" });
+    } catch (error) {
+        console.warn("Logout request failed:", error);
+    } finally {
+        authToken = "";
+        localStorage.removeItem("auth_token");
         window.location.href = "/";
     }
-);
+}
+
+/* ---------------------------
+   MOBILE SIDEBAR
+---------------------------- */
+
+function openMobileSidebar() {
+    $("chatSidebar")?.classList.add("open");
+    $("sidebarOverlay")?.classList.add("visible");
+}
+
+function closeMobileSidebar() {
+    $("chatSidebar")?.classList.remove("open");
+    $("sidebarOverlay")?.classList.remove("visible");
+}
+
+/* ---------------------------
+   EVENT LISTENERS
+---------------------------- */
+
+document.addEventListener("DOMContentLoaded", () => {
+    $("loginForm")?.addEventListener("submit", handleLogin);
+
+    $("chatForm")?.addEventListener("submit", sendMessage);
+
+    $("newChatButton")?.addEventListener("click", createNewChat);
+
+    $("logoutButton")?.addEventListener("click", logout);
+    $("logoutBtn")?.addEventListener("click", logout);
+
+    $("question")?.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            $("chatForm")?.requestSubmit();
+        }
+    });
+
+    $("sidebarToggle")?.addEventListener("click", openMobileSidebar);
+    $("closeSidebarButton")?.addEventListener("click", closeMobileSidebar);
+    $("sidebarOverlay")?.addEventListener("click", closeMobileSidebar);
+
+    if ($("chatForm") || $("chatHistory")) {
+        initializeChat();
+    }
+});

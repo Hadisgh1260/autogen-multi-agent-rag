@@ -1,185 +1,114 @@
+
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <meta
-        name="description"
-        content="AutoGen RAG Team - AI software engineering assistant"
-    >
-
-    <title>AutoGen RAG Team</title>
-
-    <link
-        rel="stylesheet"
-        href="/static/style.css"
-    >
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoGen RAG Team - Chat</title>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
-
-
 <body class="chat-body">
-
     <div class="app">
-
-        <!-- =====================================================
-             TOP BAR
-             ===================================================== -->
-
         <header class="topbar">
+            <div class="topbar-left">
+                <button
+                    id="sidebarToggle"
+                    class="sidebar-toggle"
+                    type="button"
+                    aria-label="Open chat history"
+                    title="Chat history"
+                >☰</button>
 
-            <div class="brand">
-
-                <div class="brand-icon">
-                    AI
+                <div class="brand">
+                    <h1>AutoGen RAG Team</h1>
+                    <p>Backend &amp; Frontend AI Assistant</p>
                 </div>
-
-                <div class="brand-text">
-
-                    <h1>
-                        AutoGen RAG Team
-                    </h1>
-
-                    <span id="usernameLabel">
-                        User
-                    </span>
-
-                </div>
-
             </div>
 
-
-            <button
-                id="logoutButton"
-                class="logout-button"
-                type="button"
-            >
-                Logout
-            </button>
-
+            <div class="topbar-actions">
+                <span id="usernameDisplay" class="username-display"></span>
+                <button id="logoutButton" class="logout-button" type="button">
+                    Log out
+                </button>
+            </div>
         </header>
 
+        <div id="sidebarOverlay"></div>
 
-        <!-- =====================================================
-             CHAT AREA
-             ===================================================== -->
-
-        <main class="chat-container">
-
-            <section
-                id="messages"
-                class="messages"
-                aria-live="polite"
-            >
-
-                <!-- Personalized welcome message is inserted by app.js -->
-
-            </section>
-
-
-            <!-- =================================================
-                 BLOCK SCREEN
-                 ================================================= -->
-
-            <section
-                id="blockBox"
-                class="block-box hidden"
-            >
-
-                <div class="block-icon">
-                    !
-                </div>
-
-                <h2>
-                    Account temporarily blocked
-                </h2>
-
-                <p>
-                    You have reached the maximum number of
-                    unrelated questions for this session.
-                </p>
-
-                <p>
-                    You can use the system again after:
-                </p>
-
-                <div
-                    id="countdown"
-                    class="countdown"
-                >
-                    24:00:00
-                </div>
-
-            </section>
-
-
-            <!-- =================================================
-                 INPUT
-                 ================================================= -->
-
-            <form
-                id="chatForm"
-                class="chat-form"
-            >
-
-                <div class="input-wrapper">
-
-                    <textarea
-                        id="question"
-                        placeholder="Ask a backend, frontend, or software-engineering question..."
-                        rows="2"
-                        maxlength="4000"
-                        required
-                        autocomplete="off"
-                    ></textarea>
+        <div class="chat-layout">
+            <aside id="chatSidebar" class="chat-sidebar">
+                <div class="sidebar-header">
+                    <h2>Chat history</h2>
 
                     <button
-                        type="submit"
-                        id="sendButton"
-                        class="send-button"
-                        aria-label="Send message"
-                    >
-                        <span>
+                        id="closeSidebarButton"
+                        class="close-sidebar-button"
+                        type="button"
+                        aria-label="Close chat history"
+                        title="Close"
+                    >×</button>
+                </div>
+
+                <button id="newChatButton" class="new-chat-button" type="button">
+                    <span aria-hidden="true">＋</span>
+                    New Chat
+                </button>
+
+                <div id="chatHistory" class="chat-history">
+                    <p class="chat-history-empty">Loading chats...</p>
+                </div>
+            </aside>
+
+            <main class="chat-container">
+                <div id="chatError" class="chat-error" hidden></div>
+
+                <section
+                    id="messages"
+                    class="messages"
+                    aria-live="polite"
+                    aria-label="Chat messages"
+                >
+                    <div class="welcome-message">
+                        <h2>How can I help you today?</h2>
+                        <p>
+                            Ask me a backend, frontend, or software-engineering question.
+                        </p>
+                    </div>
+                </section>
+
+                <div id="blockBox" class="block-box" hidden></div>
+
+                <footer class="chat-footer">
+                    <form id="chatForm" class="chat-form">
+                        <textarea
+                            id="question"
+                            name="question"
+                            placeholder="Ask your question..."
+                            rows="1"
+                            required
+                            aria-label="Your question"
+                        ></textarea>
+
+                        <button id="sendButton" type="submit">
                             Send
+                        </button>
+                    </form>
+
+                    <div class="chat-footer-info">
+                        <span>
+                            Off-topic attempts:
+                            <span id="offTopicCounter">0/3</span>
                         </span>
 
-                        <span class="send-arrow">
-                            →
+                        <span class="chat-hint">
+                            Press Enter to send · Shift + Enter for a new line
                         </span>
-
-                    </button>
-
-                </div>
-
-
-                <div class="chat-bottom">
-
-                    <span id="counter">
-                        Unrelated questions: 0 / 3
-                    </span>
-
-                    <span class="input-hint">
-                        Press Enter to send · Shift + Enter for a new line
-                    </span>
-
-                </div>
-
-            </form>
-
-        </main>
-
+                    </div>
+                </footer>
+            </main>
+        </div>
     </div>
 
-
     <script src="/static/app.js"></script>
-
 </body>
-
 </html>
